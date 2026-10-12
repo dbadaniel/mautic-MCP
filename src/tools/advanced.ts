@@ -31,6 +31,39 @@ export const toolDefinitions: ToolDefinition[] = [
     },
   },
   {
+    name: 'list_point_actions',
+    description: 'List point actions (rules that add/subtract points on contact behavior, e.g. email open, page visit)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number', description: 'Number of results', maximum: 200 },
+        search: { type: 'string', description: 'Search term' },
+      },
+    },
+  },
+  {
+    name: 'list_point_triggers',
+    description: 'List point triggers (actions fired when a contact reaches a points threshold, e.g. add tag, change stage, send email)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number', description: 'Number of results', maximum: 200 },
+        search: { type: 'string', description: 'Search term' },
+      },
+    },
+  },
+  {
+    name: 'count_contacts',
+    description: 'Count contacts matching a search (e.g. "tag:engajados", "segment:alias", "points:>50") without returning any contact data',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        search: { type: 'string', description: 'Mautic search expression' },
+      },
+      required: ['search'],
+    },
+  },
+  {
     name: 'list_stages',
     description: 'Get all lifecycle stages',
     inputSchema: {
@@ -124,6 +157,31 @@ export const toolHandlers: Record<string, ToolHandler> = {
     const response = await client.v1.post(`/contacts/${contactId}/points/minus/${points}`, payload);
     return {
       content: [{ type: 'text', text: `Subtracted ${points} points from contact ${contactId} successfully:\n${JSON.stringify(response.data, null, 2)}` }],
+    };
+  },
+
+  async list_point_actions(client: MauticApiClient, args: any) {
+    const params: any = { limit: Math.min(args?.limit || 100, 200) };
+    if (args?.search) params.search = args.search;
+    const response = await client.v1.get('/points', { params });
+    return {
+      content: [{ type: 'text', text: `Found ${response.data.total || 0} point actions:\n${JSON.stringify(response.data.points || response.data, null, 2)}` }],
+    };
+  },
+
+  async list_point_triggers(client: MauticApiClient, args: any) {
+    const params: any = { limit: Math.min(args?.limit || 100, 200) };
+    if (args?.search) params.search = args.search;
+    const response = await client.v1.get('/points/triggers', { params });
+    return {
+      content: [{ type: 'text', text: `Found ${response.data.total || 0} point triggers:\n${JSON.stringify(response.data.triggers || response.data, null, 2)}` }],
+    };
+  },
+
+  async count_contacts(client: MauticApiClient, args: any) {
+    const response = await client.v1.get('/contacts', { params: { search: args.search, limit: 1, minimal: true } });
+    return {
+      content: [{ type: 'text', text: `${response.data.total ?? 0} contacts match "${args.search}"` }],
     };
   },
 

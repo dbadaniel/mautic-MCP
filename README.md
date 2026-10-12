@@ -1,6 +1,6 @@
 # Mautic MCP Server
 
-A comprehensive Model Context Protocol (MCP) server for Mautic 7 (Columba Edition) marketing automation platform. Supports both v1 (FOSRestBundle) and v2 (API Platform) endpoints with 70 tools.
+A comprehensive Model Context Protocol (MCP) server for Mautic 7 (Columba Edition) marketing automation platform. Supports both v1 (FOSRestBundle) and v2 (API Platform) endpoints with 73 tools.
 
 [![GitHub Stars](https://img.shields.io/github/stars/Cbrown35/mantic-MCP?style=social)](https://github.com/Cbrown35/mantic-MCP/stargazers)
 [![GitHub Issues](https://img.shields.io/github/issues/Cbrown35/mantic-MCP)](https://github.com/Cbrown35/mantic-MCP/issues)
@@ -131,6 +131,9 @@ SMS API classes have been removed in Mautic 7. The `list_sms` and `create_sms` t
 ### Advanced Features (7 tools)
 - **add_contact_points** - Add points to contacts
 - **subtract_contact_points** - Subtract points from contacts
+- **list_point_actions** - List point actions (points given for opens, clicks, visits)
+- **list_point_triggers** - List point triggers (actions at a points threshold)
+- **count_contacts** - Count contacts for a search, without returning contact data
 - **list_stages** - Get all lifecycle stages
 - **change_contact_stage** - Change contact's lifecycle stage
 - **list_contact_fields** - Get all contact custom fields
