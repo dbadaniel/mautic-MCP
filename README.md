@@ -1,6 +1,6 @@
 # Mautic MCP Server
 
-A comprehensive Model Context Protocol (MCP) server for Mautic 7 (Columba Edition) marketing automation platform. Supports both v1 (FOSRestBundle) and v2 (API Platform) endpoints with 68 tools.
+A comprehensive Model Context Protocol (MCP) server for Mautic 7 (Columba Edition) marketing automation platform. Supports both v1 (FOSRestBundle) and v2 (API Platform) endpoints with 70 tools.
 
 [![GitHub Stars](https://img.shields.io/github/stars/Cbrown35/mantic-MCP?style=social)](https://github.com/Cbrown35/mantic-MCP/stargazers)
 [![GitHub Issues](https://img.shields.io/github/issues/Cbrown35/mantic-MCP)](https://github.com/Cbrown35/mantic-MCP/issues)
@@ -85,11 +85,13 @@ SMS API classes have been removed in Mautic 7. The `list_sms` and `create_sms` t
 - **get_campaign_graph_stats** - Campaign graph statistics (Mautic 7)
 - **get_campaign_map_stats** - Campaign geographic stats (Mautic 7)
 
-### Email Operations (8 tools)
-- **send_email** - Send emails to specific contacts
+### Email Operations (10 tools)
+- **send_email** - Send an email to specific contacts (by ID or email address)
 - **list_emails** - Get all email templates and campaigns
 - **get_email** - Get detailed email information
-- **create_email_template** - Create new email templates
+- **create_email_template** - Create new emails (template or segment email, with segments, language, preheader and category)
+- **update_email** - Update fields of an existing email
+- **clone_email** - Copy an existing email, optionally overriding fields
 - **get_email_stats** - Get email performance statistics
 - **send_email_to_segment** - Send email to segments (Mautic 7)
 - **record_email_reply** - Record email reply by tracking hash (Mautic 7)
