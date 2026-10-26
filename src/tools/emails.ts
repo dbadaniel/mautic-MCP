@@ -41,7 +41,7 @@ export const toolDefinitions: ToolDefinition[] = [
   },
   {
     name: 'create_email_template',
-    description: 'Create a new email template',
+    description: 'Create a new email (template or segment/list email)',
     inputSchema: {
       type: 'object',
       properties: {
@@ -52,10 +52,68 @@ export const toolDefinitions: ToolDefinition[] = [
         replyToAddress: { type: 'string', description: 'Reply-to email address' },
         customHtml: { type: 'string', description: 'HTML content' },
         plainText: { type: 'string', description: 'Plain text content' },
-        emailType: { type: 'string', enum: ['template', 'list'], description: 'Email type' },
+        emailType: { type: 'string', enum: ['template', 'list'], description: 'Email type: "template" (campaigns/API) or "list" (segment email)' },
         isPublished: { type: 'boolean', description: 'Publish immediately' },
+        lists: { type: 'array', items: { type: 'number' }, description: 'Segment IDs (required for "list" emails)' },
+        language: { type: 'string', description: 'Language code, e.g. "en", "pt_BR"' },
+        preheaderText: { type: 'string', description: 'Preheader text shown after the subject in the inbox' },
+        category: { type: 'number', description: 'Category ID' },
+        publishUp: { type: 'string', description: 'Publish start date (YYYY-MM-DD HH:MM:SS)' },
+        publishDown: { type: 'string', description: 'Publish end date (YYYY-MM-DD HH:MM:SS)' },
       },
       required: ['name', 'subject'],
+    },
+  },
+  {
+    name: 'update_email',
+    description: 'Update an existing email. Only the fields provided are changed.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'number', description: 'Email ID' },
+        name: { type: 'string', description: 'Email name' },
+        subject: { type: 'string', description: 'Email subject' },
+        fromAddress: { type: 'string', description: 'From email address' },
+        fromName: { type: 'string', description: 'From name' },
+        replyToAddress: { type: 'string', description: 'Reply-to email address' },
+        customHtml: { type: 'string', description: 'HTML content' },
+        plainText: { type: 'string', description: 'Plain text content' },
+        emailType: { type: 'string', enum: ['template', 'list'], description: 'Email type: "template" (campaigns/API) or "list" (segment email)' },
+        isPublished: { type: 'boolean', description: 'Publish immediately' },
+        lists: { type: 'array', items: { type: 'number' }, description: 'Segment IDs (required for "list" emails)' },
+        language: { type: 'string', description: 'Language code, e.g. "en", "pt_BR"' },
+        preheaderText: { type: 'string', description: 'Preheader text shown after the subject in the inbox' },
+        category: { type: 'number', description: 'Category ID' },
+        publishUp: { type: 'string', description: 'Publish start date (YYYY-MM-DD HH:MM:SS)' },
+        publishDown: { type: 'string', description: 'Publish end date (YYYY-MM-DD HH:MM:SS)' },
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'clone_email',
+    description: 'Create a copy of an existing email, optionally overriding fields (e.g. name, subject, customHtml, emailType, lists). The copy is unpublished unless isPublished is set.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'number', description: 'ID of the email to copy' },
+        name: { type: 'string', description: 'Email name' },
+        subject: { type: 'string', description: 'Email subject' },
+        fromAddress: { type: 'string', description: 'From email address' },
+        fromName: { type: 'string', description: 'From name' },
+        replyToAddress: { type: 'string', description: 'Reply-to email address' },
+        customHtml: { type: 'string', description: 'HTML content' },
+        plainText: { type: 'string', description: 'Plain text content' },
+        emailType: { type: 'string', enum: ['template', 'list'], description: 'Email type: "template" (campaigns/API) or "list" (segment email)' },
+        isPublished: { type: 'boolean', description: 'Publish immediately' },
+        lists: { type: 'array', items: { type: 'number' }, description: 'Segment IDs (required for "list" emails)' },
+        language: { type: 'string', description: 'Language code, e.g. "en", "pt_BR"' },
+        preheaderText: { type: 'string', description: 'Preheader text shown after the subject in the inbox' },
+        category: { type: 'number', description: 'Category ID' },
+        publishUp: { type: 'string', description: 'Publish start date (YYYY-MM-DD HH:MM:SS)' },
+        publishDown: { type: 'string', description: 'Publish end date (YYYY-MM-DD HH:MM:SS)' },
+      },
+      required: ['id'],
     },
   },
   {
@@ -111,14 +169,33 @@ export const toolDefinitions: ToolDefinition[] = [
 
 export const toolHandlers: Record<string, ToolHandler> = {
   async send_email(client: MauticApiClient, args: any) {
+    // The Mautic API sends to one contact per request: POST /emails/{id}/contact/{contactId}/send
     const { emailId, contactIds, contactEmails } = args;
-    const data: any = { id: emailId };
-    if (contactIds) data.contactIds = contactIds;
-    if (contactEmails) data.contactEmails = contactEmails;
+    const ids: number[] = [...(contactIds || [])];
+    const notFound: string[] = [];
 
-    const response = await client.v1.post(`/emails/${emailId}/contact/send`, data);
+    for (const email of contactEmails || []) {
+      const r = await client.v1.get('/contacts', { params: { search: `email:${email}`, limit: 1, minimal: true } });
+      const found = Object.keys(r.data?.contacts || {});
+      if (found.length) ids.push(Number(found[0]));
+      else notFound.push(email);
+    }
+
+    if (!ids.length) {
+      return {
+        content: [{ type: 'text', text: `No contacts to send to.${notFound.length ? ` Not found: ${notFound.join(', ')}` : ''}` }],
+        isError: true,
+      };
+    }
+
+    const results: any[] = [];
+    for (const contactId of ids) {
+      const response = await client.v1.post(`/emails/${emailId}/contact/${contactId}/send`, {});
+      results.push({ contactId, result: response.data });
+    }
+    const extra = notFound.length ? `\nNot found: ${notFound.join(', ')}` : '';
     return {
-      content: [{ type: 'text', text: `Email sent successfully:\n${JSON.stringify(response.data, null, 2)}` }],
+      content: [{ type: 'text', text: `Email ${emailId} sent:\n${JSON.stringify(results, null, 2)}${extra}` }],
     };
   },
 
@@ -144,9 +221,37 @@ export const toolHandlers: Record<string, ToolHandler> = {
   },
 
   async create_email_template(client: MauticApiClient, args: any) {
-    const response = await client.v1.post('/emails/new', args);
+    const response = await client.v1.post('/emails/new', buildEmailPayload(args));
     return {
-      content: [{ type: 'text', text: `Email template created successfully:\n${JSON.stringify(response.data.email, null, 2)}` }],
+      content: [{ type: 'text', text: `Email created successfully:\n${JSON.stringify(response.data.email, null, 2)}` }],
+    };
+  },
+
+  async update_email(client: MauticApiClient, args: any) {
+    const { id, ...fields } = args;
+    const response = await client.v1.patch(`/emails/${id}/edit`, buildEmailPayload(fields));
+    return {
+      content: [{ type: 'text', text: `Email ${id} updated successfully:\n${JSON.stringify(response.data.email, null, 2)}` }],
+    };
+  },
+
+  async clone_email(client: MauticApiClient, args: any) {
+    const { id, ...overrides } = args;
+    const original = (await client.v1.get(`/emails/${id}`)).data.email;
+    const copyable = [
+      'subject', 'fromAddress', 'fromName', 'replyToAddress', 'customHtml', 'plainText',
+      'emailType', 'language', 'preheaderText', 'template', 'utmTags', 'headers',
+    ];
+    const base: any = { name: `${original.name} (copy)`, isPublished: false };
+    for (const key of copyable) {
+      if (original[key] !== undefined && original[key] !== null) base[key] = original[key];
+    }
+    if (original.category?.id) base.category = original.category.id;
+    if (Array.isArray(original.lists) && original.lists.length) base.lists = original.lists.map((l: any) => l.id);
+
+    const response = await client.v1.post('/emails/new', { ...base, ...buildEmailPayload(overrides) });
+    return {
+      content: [{ type: 'text', text: `Email ${id} cloned successfully:\n${JSON.stringify(response.data.email, null, 2)}` }],
     };
   },
 
@@ -186,3 +291,16 @@ export const toolHandlers: Record<string, ToolHandler> = {
     };
   },
 };
+
+/** Keep only the fields the tools accept and drop undefined values. */
+function buildEmailPayload(args: any): Record<string, any> {
+  const allowed = [
+    'name', 'subject', 'fromAddress', 'fromName', 'replyToAddress', 'customHtml', 'plainText',
+    'emailType', 'isPublished', 'lists', 'language', 'preheaderText', 'category', 'publishUp', 'publishDown',
+  ];
+  const payload: Record<string, any> = {};
+  for (const key of allowed) {
+    if (args?.[key] !== undefined) payload[key] = args[key];
+  }
+  return payload;
+}
