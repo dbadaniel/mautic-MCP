@@ -93,3 +93,13 @@ São **73 ferramentas**, nas APIs v1 e v2 do Mautic. Veja a descrição de cada 
 ## Licença
 
 MIT. Veja [LICENSE](LICENSE).
+
+---
+
+## ☕ Apoie o Projeto
+
+Este projeto é mantido com dedicação por quem vive os desafios reais de grandes operações digitais. Se ele economizou horas do seu trabalho ou permitiu que você automatizasse processos e ganhasse tempo, considere apoiar:
+
+**Chave Pix:** `expertsa.oficial@gmail.com`
+
+Qualquer valor ajuda a manter as atualizações constantes e a compatibilidade com a API do Mautic! 💜
