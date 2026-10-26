@@ -1,11 +1,15 @@
 {
-  "name": "mantic.dzind",
-  "version": "2.0.0",
-  "description": "A Model Context Protocol server for Mautic 7 (Columba Edition) marketing automation",
+  "name": "expertsa-mautic-mcp",
+  "version": "2.1.0-expertsa",
+  "description": "MCP server for Mautic 7, maintained by EXPERTSA (fork of Cbrown35/mantic-MCP)",
   "private": true,
   "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
   "bin": {
-    "mantic.dzind": "./build/index.js"
+    "expertsa-mautic-mcp": "./build/index.js"
   },
   "files": [
     "build"
