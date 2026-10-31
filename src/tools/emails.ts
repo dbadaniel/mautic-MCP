@@ -1,3 +1,4 @@
+import { readFileSync } from 'fs';
 import type { MauticApiClient } from '../api/client.js';
 import type { ToolDefinition, ToolHandler } from '../types/index.js';
 
@@ -41,7 +42,7 @@ export const toolDefinitions: ToolDefinition[] = [
   },
   {
     name: 'create_email_template',
-    description: 'Create a new email (template or segment/list email)',
+    description: 'Create a new email (template or segment/list email). A published segment/list email must have publishDown (stop date, UTC): the tool refuses it otherwise, so it never keeps sending to people who join the segment later.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -58,15 +59,15 @@ export const toolDefinitions: ToolDefinition[] = [
         language: { type: 'string', description: 'Language code, e.g. "en", "pt_BR"' },
         preheaderText: { type: 'string', description: 'Preheader text shown after the subject in the inbox' },
         category: { type: 'number', description: 'Category ID' },
-        publishUp: { type: 'string', description: 'Publish start date (YYYY-MM-DD HH:MM:SS)' },
-        publishDown: { type: 'string', description: 'Publish end date (YYYY-MM-DD HH:MM:SS)' },
+        publishUp: { type: 'string', description: 'Publish start date, UTC = Brasília + 3h (YYYY-MM-DD HH:MM:SS)' },
+        publishDown: { type: 'string', description: 'Stop date, UTC = Brasília + 3h (YYYY-MM-DD HH:MM:SS). Required for a published segment/list email: the event time or end of the offer.' },
       },
       required: ['name', 'subject'],
     },
   },
   {
     name: 'update_email',
-    description: 'Update an existing email. Only the fields provided are changed.',
+    description: 'Update an existing email. Only the fields provided are changed. A published segment/list email must keep a publishDown (stop date, UTC) after publishUp: the tool refuses the change otherwise.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -77,6 +78,8 @@ export const toolDefinitions: ToolDefinition[] = [
         fromName: { type: 'string', description: 'From name' },
         replyToAddress: { type: 'string', description: 'Reply-to email address' },
         customHtml: { type: 'string', description: 'HTML content' },
+        htmlFile: { type: 'string', description: 'Path of a file (on the machine running this server, e.g. /mnt/d/...) whose content becomes customHtml' },
+        plainTextFile: { type: 'string', description: 'Path of a file whose content becomes plainText' },
         plainText: { type: 'string', description: 'Plain text content' },
         emailType: { type: 'string', enum: ['template', 'list'], description: 'Email type: "template" (campaigns/API) or "list" (segment email)' },
         isPublished: { type: 'boolean', description: 'Publish immediately' },
@@ -84,10 +87,36 @@ export const toolDefinitions: ToolDefinition[] = [
         language: { type: 'string', description: 'Language code, e.g. "en", "pt_BR"' },
         preheaderText: { type: 'string', description: 'Preheader text shown after the subject in the inbox' },
         category: { type: 'number', description: 'Category ID' },
-        publishUp: { type: 'string', description: 'Publish start date (YYYY-MM-DD HH:MM:SS)' },
-        publishDown: { type: 'string', description: 'Publish end date (YYYY-MM-DD HH:MM:SS)' },
+        publishUp: { type: 'string', description: 'Publish start date, UTC = Brasília + 3h (YYYY-MM-DD HH:MM:SS)' },
+        publishDown: { type: 'string', description: 'Stop date, UTC = Brasília + 3h (YYYY-MM-DD HH:MM:SS). Required for a published segment/list email: the event time or end of the offer.' },
       },
       required: ['id'],
+    },
+  },
+  {
+    name: 'replace_email_text',
+    description: 'Find-and-replace text inside an existing email (HTML and plain text), keeping the rest of the email as it is. Fails if a search text is not found. Optionally also sets subject and preheader.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'number', description: 'Email ID' },
+        replacements: {
+          type: 'array',
+          description: 'List of exact text replacements',
+          items: {
+            type: 'object',
+            properties: {
+              find: { type: 'string', description: 'Exact text to find' },
+              replace: { type: 'string', description: 'Replacement text' },
+            },
+            required: ['find', 'replace'],
+          },
+        },
+        subject: { type: 'string', description: 'New subject (optional)' },
+        preheaderText: { type: 'string', description: 'New preheader (optional)' },
+        applyToPlainText: { type: 'boolean', description: 'Also apply to the plain-text version (default true)' },
+      },
+      required: ['id', 'replacements'],
     },
   },
   {
@@ -103,6 +132,8 @@ export const toolDefinitions: ToolDefinition[] = [
         fromName: { type: 'string', description: 'From name' },
         replyToAddress: { type: 'string', description: 'Reply-to email address' },
         customHtml: { type: 'string', description: 'HTML content' },
+        htmlFile: { type: 'string', description: 'Path of a file (on the machine running this server, e.g. /mnt/d/...) whose content becomes customHtml' },
+        plainTextFile: { type: 'string', description: 'Path of a file whose content becomes plainText' },
         plainText: { type: 'string', description: 'Plain text content' },
         emailType: { type: 'string', enum: ['template', 'list'], description: 'Email type: "template" (campaigns/API) or "list" (segment email)' },
         isPublished: { type: 'boolean', description: 'Publish immediately' },
@@ -110,8 +141,8 @@ export const toolDefinitions: ToolDefinition[] = [
         language: { type: 'string', description: 'Language code, e.g. "en", "pt_BR"' },
         preheaderText: { type: 'string', description: 'Preheader text shown after the subject in the inbox' },
         category: { type: 'number', description: 'Category ID' },
-        publishUp: { type: 'string', description: 'Publish start date (YYYY-MM-DD HH:MM:SS)' },
-        publishDown: { type: 'string', description: 'Publish end date (YYYY-MM-DD HH:MM:SS)' },
+        publishUp: { type: 'string', description: 'Publish start date, UTC = Brasília + 3h (YYYY-MM-DD HH:MM:SS)' },
+        publishDown: { type: 'string', description: 'Stop date, UTC = Brasília + 3h (YYYY-MM-DD HH:MM:SS). Required for a published segment/list email: the event time or end of the offer.' },
       },
       required: ['id'],
     },
@@ -131,7 +162,7 @@ export const toolDefinitions: ToolDefinition[] = [
   // NEW Mautic 7 email tools
   {
     name: 'send_email_to_segment',
-    description: 'Send email to its assigned segment(s) with real-time audience adaptation (Mautic 7)',
+    description: 'Send a segment/list email to its segment(s) now. Refuses if the email has no publishDown (stop date, UTC) or if it already passed. Sending is a mass action: needs the user\'s OK.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -166,6 +197,45 @@ export const toolDefinitions: ToolDefinition[] = [
     },
   },
 ];
+
+
+function summarizeEmail(e: any): string {
+  return JSON.stringify({
+    id: e.id, name: e.name, subject: e.subject, isPublished: e.isPublished,
+    fromName: e.fromName, fromAddress: e.fromAddress, replyToAddress: e.replyToAddress,
+    preheaderText: e.preheaderText, language: e.language, emailType: e.emailType,
+    htmlLength: (e.customHtml || '').length, plainTextLength: (e.plainText || '').length,
+    sentCount: e.sentCount, readCount: e.readCount,
+  }, null, 2);
+}
+
+
+function loadFiles(fields: any) {
+  const out = { ...fields };
+  if (out.htmlFile) { out.customHtml = readFileSync(out.htmlFile, 'utf8'); delete out.htmlFile; }
+  if (out.plainTextFile) { out.plainText = readFileSync(out.plainTextFile, 'utf8'); delete out.plainTextFile; }
+  return out;
+}
+
+
+// Rule (30/10/2026): segment (list) emails must have a stop date. Mautic can keep sending
+// a list email to contacts who join the segment later ("continue sending"), so an invite
+// for a past event would keep going out. publishUp/publishDown are stored in UTC (BRT + 3h).
+const STOP_RULE = 'Regra: todo e-mail de segmento (emailType "list") publicado precisa de publishDown (data de término, em UTC = horário de Brasília + 3h), no horário do evento ou do fim da oferta; para newsletter, no fim do dia do envio. Sem isso o Mautic continua enviando para quem entra no segmento depois.';
+function parseUtc(v: any): number | null {
+  if (!v) return null;
+  const str = String(v).trim();
+  const iso = /[zZ]|[+-]\d\d:?\d\d$/.test(str) ? str : str.replace(' ', 'T') + 'Z';
+  const t = Date.parse(iso);
+  return isNaN(t) ? null : t;
+}
+function assertStopDate(email: { emailType?: string; isPublished?: boolean; publishUp?: any; publishDown?: any }, context: string) {
+  if (email.emailType !== 'list' || !email.isPublished) return;
+  const down = parseUtc(email.publishDown);
+  if (down === null) throw new Error(`${context}: e-mail de segmento publicado sem publishDown. ${STOP_RULE}`);
+  const up = parseUtc(email.publishUp);
+  if (up !== null && down <= up) throw new Error(`${context}: publishDown precisa ser depois de publishUp. ${STOP_RULE}`);
+}
 
 export const toolHandlers: Record<string, ToolHandler> = {
   async send_email(client: MauticApiClient, args: any) {
@@ -221,6 +291,7 @@ export const toolHandlers: Record<string, ToolHandler> = {
   },
 
   async create_email_template(client: MauticApiClient, args: any) {
+    assertStopDate({ emailType: args.emailType, isPublished: args.isPublished, publishUp: args.publishUp, publishDown: args.publishDown }, 'create_email_template');
     const response = await client.v1.post('/emails/new', buildEmailPayload(args));
     return {
       content: [{ type: 'text', text: `Email created successfully:\n${JSON.stringify(response.data.email, null, 2)}` }],
@@ -228,15 +299,43 @@ export const toolHandlers: Record<string, ToolHandler> = {
   },
 
   async update_email(client: MauticApiClient, args: any) {
-    const { id, ...fields } = args;
+    const { id, ...rest } = args;
+    const fields = loadFiles(rest);
+    const current = (await client.v1.get(`/emails/${id}`)).data.email;
+    const pick = (k: string) => (fields[k] !== undefined ? fields[k] : current[k]);
+    assertStopDate({ emailType: pick('emailType'), isPublished: pick('isPublished'), publishUp: pick('publishUp'), publishDown: pick('publishDown') }, `update_email ${id}`);
     const response = await client.v1.patch(`/emails/${id}/edit`, buildEmailPayload(fields));
     return {
-      content: [{ type: 'text', text: `Email ${id} updated successfully:\n${JSON.stringify(response.data.email, null, 2)}` }],
+      content: [{ type: 'text', text: `Email ${id} updated successfully:\n${summarizeEmail(response.data.email)}` }],
+    };
+  },
+
+  async replace_email_text(client: MauticApiClient, args: any) {
+    const { id, replacements = [], subject, preheaderText, applyToPlainText = true } = args;
+    const email = (await client.v1.get(`/emails/${id}`)).data.email;
+    let html: string = email.customHtml || '';
+    let plain: string | null = email.plainText;
+    const report: string[] = [];
+    for (const r of replacements) {
+      const count = html.split(r.find).length - 1;
+      if (count === 0) throw new Error(`Text not found in email ${id}: ${JSON.stringify(r.find)}`);
+      html = html.split(r.find).join(r.replace);
+      if (applyToPlainText && plain) plain = plain.split(r.find).join(r.replace);
+      report.push(`${count}x ${JSON.stringify(r.find)} -> ${JSON.stringify(r.replace)}`);
+    }
+    const payload: any = { customHtml: html };
+    if (plain !== null && plain !== undefined) payload.plainText = plain;
+    if (subject !== undefined) payload.subject = subject;
+    if (preheaderText !== undefined) payload.preheaderText = preheaderText;
+    const response = await client.v1.patch(`/emails/${id}/edit`, payload);
+    return {
+      content: [{ type: 'text', text: `Email ${id} updated:\n${report.join('\n')}\n${summarizeEmail(response.data.email)}` }],
     };
   },
 
   async clone_email(client: MauticApiClient, args: any) {
-    const { id, ...overrides } = args;
+    const { id, ...rawOverrides } = args;
+    const overrides = loadFiles(rawOverrides);
     const original = (await client.v1.get(`/emails/${id}`)).data.email;
     const copyable = [
       'subject', 'fromAddress', 'fromName', 'replyToAddress', 'customHtml', 'plainText',
@@ -249,9 +348,11 @@ export const toolHandlers: Record<string, ToolHandler> = {
     if (original.category?.id) base.category = original.category.id;
     if (Array.isArray(original.lists) && original.lists.length) base.lists = original.lists.map((l: any) => l.id);
 
+    const merged: any = { ...base, ...overrides };
+    assertStopDate({ emailType: merged.emailType, isPublished: merged.isPublished, publishUp: merged.publishUp, publishDown: merged.publishDown }, `clone_email ${id}`);
     const response = await client.v1.post('/emails/new', { ...base, ...buildEmailPayload(overrides) });
     return {
-      content: [{ type: 'text', text: `Email ${id} cloned successfully:\n${JSON.stringify(response.data.email, null, 2)}` }],
+      content: [{ type: 'text', text: `Email ${id} cloned successfully:\n${summarizeEmail(response.data.email)}` }],
     };
   },
 
@@ -266,6 +367,11 @@ export const toolHandlers: Record<string, ToolHandler> = {
   // NEW Mautic 7 handlers
   async send_email_to_segment(client: MauticApiClient, args: any) {
     const { emailId } = args;
+    const email = (await client.v1.get(`/emails/${emailId}`)).data.email;
+    const down = parseUtc(email.publishDown);
+    if (email.emailType !== 'list') throw new Error(`send_email_to_segment: e-mail ${emailId} não é de segmento.`);
+    if (down === null) throw new Error(`send_email_to_segment: e-mail ${emailId} sem publishDown. Defina a data de término antes de enviar. ${STOP_RULE}`);
+    if (down <= Date.now()) throw new Error(`send_email_to_segment: a data de término do e-mail ${emailId} (${email.publishDown}) já passou.`);
     const response = await client.v1.post(`/emails/${emailId}/send`);
     return {
       content: [{ type: 'text', text: `Email ${emailId} sent to segment successfully:\n${JSON.stringify(response.data, null, 2)}` }],

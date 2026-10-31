@@ -80,6 +80,7 @@ export const toolDefinitions: ToolDefinition[] = [
       properties: {
         search: { type: 'string', description: 'Search term' },
         limit: { type: 'number', description: 'Number of results', maximum: 200 },
+        start: { type: 'number', description: 'Offset' },
       },
     },
   },
@@ -188,10 +189,13 @@ export const toolHandlers: Record<string, ToolHandler> = {
     const params: any = {};
     if (args?.search) params.search = args.search;
     if (args?.limit) params.limit = Math.min(args.limit, 200);
+    if (args?.start) params.start = args.start;
 
     const response = await client.v1.get('/tags', { params });
+    const tags: any = response.data.tags || {};
+    const lines = Object.values(tags).map((t: any) => `${t.id}: ${t.tag}`).join('\n');
     return {
-      content: [{ type: 'text', text: `Found ${response.data.total || 0} tags:\n${JSON.stringify(response.data.tags || response.data, null, 2)}` }],
+      content: [{ type: 'text', text: `Found ${response.data.total || 0} tags (showing ${Object.keys(tags).length}):\n${lines}` }],
     };
   },
 
