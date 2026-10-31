@@ -3,6 +3,29 @@
 Alterações feitas neste fork da EXPERTSA em relação ao projeto original
 ([Cbrown35/mantic-MCP](https://github.com/Cbrown35/mantic-MCP), versão 2.0.0).
 
+## [Não lançado] — 2026-10-30
+
+### Adicionado
+- **Regra da data de término para e-mails de segmento.** `create_email_template`,
+  `update_email` e `clone_email` recusam deixar publicado um e-mail de segmento
+  (`emailType: "list"`) sem `publishDown`, ou com `publishDown` antes de `publishUp`.
+  `send_email_to_segment` recusa disparar sem data de término ou com a data já passada.
+  Motivo: com a opção "continuar enviando para quem entra no segmento depois", o
+  Mautic continua mandando convites de eventos que já aconteceram. As datas da API
+  são em UTC.
+- **E-mails:** `replace_email_text` (troca trechos do HTML e do texto puro);
+  `update_email` aceita `htmlFile`/`plainTextFile` e devolve um resumo curto.
+- **Campanhas:** `update_campaign` (nome, descrição, publicação, troca do e-mail de
+  eventos existentes com `eventUpdates`, novos envios com `addEvents`) e
+  `remove_contact_from_campaign`.
+- **Segmentos:** `update_segment` e `list_segment_filter_fields`.
+- **Pontos e tags:** `list_point_action_types`, `update_point_action`,
+  `update_point_trigger`, `delete_tag`, `rename_tag`, `remove_tag_from_all_contacts`
+  e `copy_tag_to_tagged_contacts` (lotes de 200 via `/contacts/batch/edit`; mostra o
+  erro de cada contato recusado).
+- **Formulários:** `create_form` e `update_form`.
+- `list_tags` aceita `start` (paginação) e devolve só `id: nome`.
+
 ## [2.1.0-expertsa] — 2026-10
 
 ### Corrigido

@@ -53,6 +53,87 @@ export const toolDefinitions: ToolDefinition[] = [
     },
   },
   {
+    name: 'list_point_action_types',
+    description: 'List the point action types this Mautic supports (e.g. email.open, url.hit, form.submit)',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'update_point_action',
+    description: 'Edit a point action (rule). Only the fields provided are changed.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'number', description: 'Point action ID' },
+        name: { type: 'string' },
+        description: { type: 'string' },
+        isPublished: { type: 'boolean' },
+        type: { type: 'string', description: 'Action type (see list_point_action_types)' },
+        delta: { type: 'number', description: 'Points to add (negative to subtract)' },
+        repeatable: { type: 'boolean' },
+        properties: { type: 'object', description: 'Type-specific properties' },
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'update_point_trigger',
+    description: 'Edit a point trigger. Only the fields provided are changed (e.g. isPublished false to turn it off).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'number', description: 'Point trigger ID' },
+        name: { type: 'string' },
+        description: { type: 'string' },
+        isPublished: { type: 'boolean' },
+        points: { type: 'number' },
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'delete_tag',
+    description: 'Delete a tag by ID. Mautic removes it from every contact that has it. Contacts are not deleted. Irreversible: needs the user\'s OK.',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'number', description: 'Tag ID (from list_tags)' } },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'remove_tag_from_all_contacts',
+    description: 'Remove a tag (by name) from every contact that has it, in batches of up to 200 via /contacts/batch/edit. Contacts are not deleted. Mass change: needs the user\'s OK.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tag: { type: 'string', description: 'Exact tag name' },
+        maxBatches: { type: 'number', description: 'Safety limit of batches per call (default 40)' },
+      },
+      required: ['tag'],
+    },
+  },
+  {
+    name: 'copy_tag_to_tagged_contacts',
+    description: 'Add tag toTag to every contact that has tag fromTag and not yet toTag, in batches of up to 200 via /contacts/batch/edit. Keeps fromTag. Mass change: needs the user\'s OK.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fromTag: { type: 'string', description: 'Exact existing tag name' },
+        toTag: { type: 'string', description: 'Exact tag name to add' },
+        maxBatches: { type: 'number', description: 'Batches per call (default 4, ~10s each)' },
+      },
+      required: ['fromTag', 'toTag'],
+    },
+  },
+  {
+    name: 'rename_tag',
+    description: 'Rename a tag by ID (PATCH /tags/{id}/edit). Contacts keep the tag under the new name.',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'number' }, tag: { type: 'string', description: 'New tag name' } },
+      required: ['id', 'tag'],
+    },
+  },
+  {
     name: 'count_contacts',
     description: 'Count contacts matching a search (e.g. "tag:engajados", "segment:alias", "points:>50") without returning any contact data',
     inputSchema: {
@@ -176,6 +257,103 @@ export const toolHandlers: Record<string, ToolHandler> = {
     return {
       content: [{ type: 'text', text: `Found ${response.data.total || 0} point triggers:\n${JSON.stringify(response.data.triggers || response.data, null, 2)}` }],
     };
+  },
+
+  async list_point_action_types(client: MauticApiClient) {
+    const response = await client.v1.get('/points/actions/types');
+    return { content: [{ type: 'text', text: JSON.stringify(response.data, null, 2) }] };
+  },
+
+  async update_point_action(client: MauticApiClient, args: any) {
+    const { id, ...rest } = args;
+    const response = await client.v1.patch(`/points/${id}/edit`, rest);
+    const p = response.data.point;
+    return { content: [{ type: 'text', text: `Point action ${id} updated: "${p.name}" type=${p.type} delta=${p.delta} published=${p.isPublished}` }] };
+  },
+
+  async update_point_trigger(client: MauticApiClient, args: any) {
+    const { id, ...rest } = args;
+    const response = await client.v1.patch(`/points/triggers/${id}/edit`, rest);
+    const t = response.data.trigger;
+    return { content: [{ type: 'text', text: `Point trigger ${id} updated: "${t.name}" points=${t.points} published=${t.isPublished}` }] };
+  },
+
+  async delete_tag(client: MauticApiClient, args: any) {
+    const response = await client.v1.delete(`/tags/${args.id}/delete`);
+    const t = response.data.tag || {};
+    return { content: [{ type: 'text', text: `Tag ${args.id} deleted: "${t.tag ?? ''}"` }] };
+  },
+
+  async remove_tag_from_all_contacts(client: MauticApiClient, args: any) {
+    const tag: string = args.tag;
+    const maxBatches = args.maxBatches || 40;
+    const search = `tag:"${tag}"`;
+    let done = 0, batches = 0, errors = 0;
+    (globalThis as any).__lastTagBatch = '';
+    const before = (await client.v1.get('/contacts', { params: { search, limit: 1, minimal: true } })).data.total ?? 0;
+    while (batches < maxBatches) {
+      const r = await client.v1.get('/contacts', { params: { search, limit: 200, minimal: true } });
+      const ids = Object.keys(r.data.contacts || {});
+      if (ids.length === 0) break;
+      const key = ids.slice(0, 5).join(',');
+      if ((globalThis as any).__lastTagBatch === key) break;
+      (globalThis as any).__lastTagBatch = key;
+      const payload = ids.map((id) => ({ id: Number(id), tags: [`-${tag}`] }));
+      try {
+        await client.v1.patch('/contacts/batch/edit', payload);
+        done += ids.length;
+      } catch (e: any) {
+        errors++;
+        if (errors >= 3) throw new Error(`Stopped after 3 errors (done ${done}): ${e?.message || e}`);
+      }
+      batches++;
+    }
+    const after = (await client.v1.get('/contacts', { params: { search, limit: 1, minimal: true } })).data.total ?? 0;
+    return { content: [{ type: 'text', text: `Tag "${tag}": before ${before}, edited ${done} contacts in ${batches} batches, errors ${errors}, after ${after}` }] };
+  },
+
+  async copy_tag_to_tagged_contacts(client: MauticApiClient, args: any) {
+    const { fromTag, toTag } = args;
+    const maxBatches = args.maxBatches || 4;
+    const idsOf = async (tag: string) => {
+      const out = new Set<number>();
+      for (let start = 0; start < 20000; start += 200) {
+        const r = await client.v1.get('/contacts', { params: { search: `tag:"${tag}"`, limit: 200, start, minimal: true, orderBy: 'id', orderByDir: 'ASC' } });
+        const ids = Object.keys(r.data.contacts || {}).map(Number);
+        ids.forEach((i) => out.add(i));
+        if (ids.length < 200) break;
+      }
+      return out;
+    };
+    const from = await idsOf(fromTag);
+    const toBefore = await idsOf(toTag);
+    const pending = [...from].filter((i) => !toBefore.has(i));
+    let done = 0, batches = 0;
+    const failures: string[] = [];
+    for (let i = 0; i < pending.length && batches < maxBatches; i += 200, batches++) {
+      const chunk = pending.slice(i, i + 200);
+      try {
+        const r = await client.v1.patch('/contacts/batch/edit', chunk.map((id) => ({ id, tags: [toTag] })));
+        const codes = r.data?.statusCodes || {};
+        const errs = r.data?.errors || {};
+        chunk.forEach((id, k) => {
+          const code = codes[k] ?? codes[String(k)];
+          if (code && Number(code) >= 300) failures.push(`${id}: ${code} ${JSON.stringify(errs[k] ?? errs[String(k)] ?? '').slice(0, 200)}`);
+          else done++;
+        });
+      } catch (e: any) {
+        failures.push(`batch ${batches}: ${e?.message || e}`);
+      }
+    }
+    const toAfter = await idsOf(toTag);
+    const stillMissing = [...from].filter((i) => !toAfter.has(i));
+    return { content: [{ type: 'text', text: `"${fromTag}" -> "${toTag}": from ${from.size}, to before ${toBefore.size}, pending ${pending.length}; edited ok ${done} in ${batches} batches; to after ${toAfter.size}; still missing ${stillMissing.length}${stillMissing.length ? ' (ids ' + stillMissing.slice(0, 20).join(',') + ')' : ''}${failures.length ? '\nFailures:\n' + failures.slice(0, 20).join('\n') : ''}` }] };
+  },
+
+  async rename_tag(client: MauticApiClient, args: any) {
+    const response = await client.v1.patch(`/tags/${args.id}/edit`, { tag: args.tag });
+    const t = response.data.tag || {};
+    return { content: [{ type: 'text', text: `Tag ${args.id} renamed to "${t.tag}"` }] };
   },
 
   async count_contacts(client: MauticApiClient, args: any) {
