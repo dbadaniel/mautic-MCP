@@ -3,6 +3,16 @@
 Alterações feitas neste fork da EXPERTSA em relação ao projeto original
 ([Cbrown35/mantic-MCP](https://github.com/Cbrown35/mantic-MCP), versão 2.0.0).
 
+## [Não lançado] — 2026-11-09
+
+### Adicionado
+- **Datas de ativação e desativação de campanha.** `update_campaign` e
+  `create_campaign_with_automation` aceitam `publishUp` ("Activate at") e
+  `publishDown` ("Deactivate at"), em UTC. String vazia limpa a data. A ferramenta
+  recusa data inválida ou desativação antes da ativação. Use em toda campanha ligada
+  a uma data (live, evento, oferta, lançamento), para ninguém receber e-mail que já
+  perdeu o sentido. As respostas mostram as duas datas.
+
 ## [Não lançado] — 2026-10-30
 
 ### Adicionado
