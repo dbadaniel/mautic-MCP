@@ -68,7 +68,7 @@ export const toolDefinitions: ToolDefinition[] = [
   },
   {
     name: 'create_campaign_with_automation',
-    description: 'Create campaign with full event automation including triggers, actions, and canvas settings',
+    description: 'Create campaign with full event automation including triggers, actions, and canvas settings. For a campaign tied to a date (live, event, offer, launch), set publishDown (Deactivate at) so emails stop when they no longer make sense.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -76,6 +76,8 @@ export const toolDefinitions: ToolDefinition[] = [
         description: { type: 'string', description: 'Campaign description' },
         isPublished: { type: 'boolean', description: 'Publish immediately' },
         allowRestart: { type: 'boolean', description: 'Allow campaign restart' },
+        publishUp: { type: 'string', description: 'Activate at, UTC = Brasília + 3h (YYYY-MM-DD HH:MM:SS)' },
+        publishDown: { type: 'string', description: 'Deactivate at, UTC = Brasília + 3h (YYYY-MM-DD HH:MM:SS). Set it on any campaign tied to a date (live, event, offer, launch) so nobody gets emails after they stop making sense. Pass an empty string to clear it.' },
         events: {
           type: 'array',
           description: 'Array of campaign events (triggers/actions)',
@@ -131,7 +133,7 @@ export const toolDefinitions: ToolDefinition[] = [
 
   {
     name: 'update_campaign',
-    description: 'Edit an existing campaign. Only the fields provided are changed. eventUpdates changes the settings of existing events (e.g. which email a "Send email" action sends) while keeping every event, segment, form and the canvas as they are.',
+    description: 'Edit an existing campaign. Only the fields provided are changed. publishUp/publishDown set "Activate at"/"Deactivate at" (UTC). eventUpdates changes the settings of existing events (e.g. which email a "Send email" action sends) while keeping every event, segment, form and the canvas as they are.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -140,6 +142,8 @@ export const toolDefinitions: ToolDefinition[] = [
         description: { type: 'string', description: 'Campaign description' },
         isPublished: { type: 'boolean', description: 'Published or not' },
         allowRestart: { type: 'boolean', description: 'Allow contacts to restart the campaign' },
+        publishUp: { type: 'string', description: 'Activate at, UTC = Brasília + 3h (YYYY-MM-DD HH:MM:SS)' },
+        publishDown: { type: 'string', description: 'Deactivate at, UTC = Brasília + 3h (YYYY-MM-DD HH:MM:SS). Set it on any campaign tied to a date (live, event, offer, launch) so nobody gets emails after they stop making sense. Pass an empty string to clear it.' },
         eventUpdates: {
           type: 'array',
           description: 'Changes to existing events',
@@ -248,6 +252,28 @@ export const toolDefinitions: ToolDefinition[] = [
   },
 ];
 
+
+// Activate/Deactivate dates for campaigns (Mautic "publishUp"/"publishDown"), stored in UTC.
+// Rule (09/11/2026): campaigns tied to a date (live, event, offer, launch) get a Deactivate date,
+// so nobody keeps receiving emails after they stop making sense.
+function parseUtcDate(v: any): number | null {
+  if (!v) return null;
+  const str = String(v).trim();
+  const iso = /[zZ]|[+-]\d\d:?\d\d$/.test(str) ? str : str.replace(' ', 'T') + 'Z';
+  const t = Date.parse(iso);
+  return isNaN(t) ? null : t;
+}
+function applyCampaignDates(payload: any, args: any) {
+  for (const k of ['publishUp', 'publishDown']) {
+    if (args[k] === undefined) continue;
+    if (args[k] === '' || args[k] === null) { payload[k] = null; continue; }
+    if (parseUtcDate(args[k]) === null) throw new Error(`${k}: data inválida "${args[k]}". Use YYYY-MM-DD HH:MM:SS em UTC (Brasília + 3h).`);
+    payload[k] = args[k];
+  }
+  const up = parseUtcDate(payload.publishUp), down = parseUtcDate(payload.publishDown);
+  if (up !== null && down !== null && down <= up) throw new Error('publishDown (Deactivate at) precisa ser depois de publishUp (Activate at).');
+}
+
 export const toolHandlers: Record<string, ToolHandler> = {
   async list_campaigns(client: MauticApiClient, args: any) {
     const params: any = {};
@@ -300,6 +326,7 @@ export const toolHandlers: Record<string, ToolHandler> = {
       isPublished: args.isPublished !== undefined ? args.isPublished : true,
       allowRestart: args.allowRestart || false,
     };
+    applyCampaignDates(payload, args);
 
     // Mautic expects "parent" as the plain event id (e.g. "new1") and reads the
     // links between events from canvasSettings.connections.
@@ -341,7 +368,7 @@ export const toolHandlers: Record<string, ToolHandler> = {
     const c = response.data.campaign;
     const summary = (c.events || []).map((e: any) => `#${e.id} ${e.eventType} ${e.type} "${e.name}" parent=${e.parent?.id ?? '-'} path=${e.decisionPath ?? '-'}${e.type === 'email.send' ? ` email=${e.properties?.email}` : ''}`).join('\n');
     return {
-      content: [{ type: 'text', text: `Campaign created: id ${c.id} "${c.name}" (published: ${c.isPublished})\nForms: ${(c.forms || []).map((f: any) => f.id).join(', ') || '-'} | Segments: ${(c.lists || []).map((l: any) => l.id).join(', ') || '-'}\nEvents:\n${summary}` }],
+      content: [{ type: 'text', text: `Campaign created: id ${c.id} "${c.name}" (published: ${c.isPublished}, activate: ${c.publishUp ?? '-'}, deactivate: ${c.publishDown ?? '-'})\nForms: ${(c.forms || []).map((f: any) => f.id).join(', ') || '-'} | Segments: ${(c.lists || []).map((l: any) => l.id).join(', ') || '-'}\nEvents:\n${summary}` }],
     };
   },
 
@@ -374,6 +401,7 @@ export const toolHandlers: Record<string, ToolHandler> = {
     for (const k of ['name', 'description', 'isPublished', 'allowRestart']) {
       if (args[k] !== undefined) payload[k] = args[k];
     }
+    applyCampaignDates(payload, args);
 
     if (eventUpdates?.length > 0 || addEvents?.length > 0) {
       const current = (await client.v1.get(`/campaigns/${id}`)).data.campaign;
@@ -469,7 +497,7 @@ export const toolHandlers: Record<string, ToolHandler> = {
     const c = response.data.campaign;
     const summary = (c.events || []).map((e: any) => `#${e.id} ${e.type} "${e.name}"${e.type === 'email.send' ? ` -> email ${e.properties?.email} (channelId ${e.channelId})` : ''}`).join('\n');
     return {
-      content: [{ type: 'text', text: `Campaign ${id} updated: "${c.name}" (published: ${c.isPublished})\nEvents:\n${summary}${(c.events || []).map((e: any) => ` | #${e.id} ${e.triggerMode} ${e.triggerInterval || ''}${e.triggerIntervalUnit || ''} parent=${e.parent?.id ?? '-'}`).join('')}` }],
+      content: [{ type: 'text', text: `Campaign ${id} updated: "${c.name}" (published: ${c.isPublished}, activate: ${c.publishUp ?? '-'}, deactivate: ${c.publishDown ?? '-'})\nEvents:\n${summary}${(c.events || []).map((e: any) => ` | #${e.id} ${e.triggerMode} ${e.triggerInterval || ''}${e.triggerIntervalUnit || ''} parent=${e.parent?.id ?? '-'}`).join('')}` }],
     };
   },
 
